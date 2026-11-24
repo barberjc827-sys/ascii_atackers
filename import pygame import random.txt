@@ -1,0 +1,2201 @@
+import pygame
+import random
+import sys
+
+pygame.init()
+
+# ============================================================
+# ROGUE - COMPLETE PYGAME EDITION
+# ============================================================
+
+MAP_W, MAP_H = 45, 23
+PANEL_MIN = 260
+FPS = 60
+
+display_info = pygame.display.Info()
+monitor_w = display_info.current_w or 1920
+monitor_h = display_info.current_h or 1080
+
+target_w = min(1600, monitor_w - 80)
+target_h = min(900, monitor_h - 100)
+
+scale = min(target_w / 16, target_h / 9)
+
+START_W = max(800, int(scale * 16))
+START_H = max(500, int(scale * 9))
+
+screen = pygame.display.set_mode(
+    (START_W, START_H),
+    pygame.RESIZABLE
+)
+
+pygame.display.set_caption("Rogue - Pygame Edition")
+clock = pygame.time.Clock()
+
+# COLORS
+BLACK = (12, 12, 18)
+DARK = (25, 25, 35)
+PANEL = (31, 31, 43)
+WALL = (65, 65, 78)
+FLOOR = (100, 95, 85)
+WHITE = (230, 230, 230)
+GRAY = (145, 145, 155)
+RED = (220, 65, 65)
+GREEN = (65, 220, 100)
+BLUE = (75, 140, 240)
+YELLOW = (245, 205, 65)
+PURPLE = (180, 90, 230)
+CYAN = (65, 220, 220)
+ORANGE = (235, 140, 55)
+
+WEAPONS = [
+    {"name": "Rusty Sword", "power": 2, "price": 10},
+    {"name": "Iron Sword", "power": 4, "price": 25},
+    {"name": "Steel Sword", "power": 6, "price": 45},
+    {"name": "Knight's Blade", "power": 9, "price": 80},
+    {"name": "Flame Blade", "power": 12, "price": 130},
+    {"name": "Dragon Slayer", "power": 16, "price": 200},
+]
+
+ARMOR = [
+    {"name": "Leather Armor", "defense": 1, "price": 15},
+    {"name": "Iron Armor", "defense": 3, "price": 35},
+    {"name": "Steel Armor", "defense": 5, "price": 65},
+    {"name": "Knight Armor", "defense": 8, "price": 110},
+    {"name": "Dragon Armor", "defense": 12, "price": 180},
+]
+
+POTIONS = [
+    {"name": "Small Health Potion", "heal": 10, "price": 10},
+    {"name": "Health Potion", "heal": 25, "price": 20},
+    {"name": "Large Health Potion", "heal": 50, "price": 40},
+]
+
+SCROLLS = [
+    {"name": "Scroll of Healing", "heal": 35, "price": 30},
+    {"name": "Scroll of Power", "power": 5, "price": 45},
+]
+
+TRINKETS = [
+    {
+        "name": "Lucky Coin",
+        "bonus": "gold",
+        "price": 35,
+        "description": "Find a little extra gold."
+    },
+    {
+        "name": "Old Charm",
+        "bonus": "health",
+        "price": 45,
+        "description": "Adds 5 maximum HP."
+    },
+    {
+        "name": "Warrior's Knot",
+        "bonus": "attack",
+        "price": 55,
+        "description": "Adds 1 base attack."
+    },
+]
+
+MONSTER_TYPES = [
+    {"name": "Rat", "symbol": "r", "hp": 8, "attack": 2, "xp": 3},
+    {"name": "Goblin", "symbol": "g", "hp": 14, "attack": 3, "xp": 5},
+    {"name": "Skeleton", "symbol": "s", "hp": 20, "attack": 4, "xp": 8},
+    {"name": "Orc", "symbol": "o", "hp": 30, "attack": 6, "xp": 12},
+    {"name": "Troll", "symbol": "t", "hp": 45, "attack": 8, "xp": 18},
+    {"name": "Demon", "symbol": "d", "hp": 55, "attack": 10, "xp": 25},
+    {"name": "Dark Knight", "symbol": "k", "hp": 70, "attack": 12, "xp": 35},
+    {"name": "Nightmare", "symbol": "n", "hp": 90, "attack": 15, "xp": 45},
+]
+
+BOSS_NAMES = [
+    "Ancient Guardian", "Bone King", "Shadow Lord",
+    "Iron Behemoth", "Forgotten Dragon", "Void Walker",
+    "Crimson Tyrant", "Dungeon Overlord",
+]
+
+dungeon, explored, rooms, monsters, items = [], [], [], [], []
+shop = None
+stairs_up = (1, 1)
+stairs_down = (2, 2)
+floor_number = 1
+deepest_floor = 1
+score = 0
+player = {}
+events = []
+game_state = "playing"
+menu_selection = 0
+guide_page = 0
+
+
+# ============================================================
+# RESPONSIVE LAYOUT
+# ============================================================
+
+def layout():
+    w, h = screen.get_size()
+
+    top_h = max(50, min(76, int(h * 0.10)))
+
+    panel_w = max(PANEL_MIN, min(400, int(w * 0.27)))
+    panel_w = min(panel_w, w // 2)
+
+    available_w = max(1, w - panel_w)
+    available_h = max(1, h - top_h)
+
+    tile = min(
+        available_w // MAP_W,
+        available_h // MAP_H
+    )
+
+    tile = max(1, tile)
+
+    map_px_w = tile * MAP_W
+    map_px_h = tile * MAP_H
+
+    map_x = (available_w - map_px_w) // 2
+    map_y = top_h + (available_h - map_px_h) // 2
+
+    panel_x = w - panel_w
+
+    font_size = max(9, min(18, int(tile * 0.68)))
+    small_size = max(8, min(15, int(tile * 0.57)))
+    big_size = max(18, min(32, int(tile * 1.25)))
+
+    return {
+        "w": w,
+        "h": h,
+        "tile": tile,
+        "top": top_h,
+        "panel_w": panel_w,
+        "panel_x": panel_x,
+        "map_x": map_x,
+        "map_y": map_y,
+        "map_w": map_px_w,
+        "map_h": map_px_h,
+        "font": pygame.font.SysFont("consolas", font_size),
+        "small": pygame.font.SysFont("consolas", small_size),
+        "big": pygame.font.SysFont("consolas", big_size, bold=True),
+    }
+
+
+def draw_text(surface, message, x, y, color=WHITE,
+              font=None, max_width=None):
+
+    if font is None:
+        font = layout()["font"]
+
+    message = str(message)
+
+    if max_width:
+        original = message
+
+        while message and font.size(message)[0] > max_width:
+            message = message[:-1]
+
+        if message != original:
+            message = message.rstrip() + "…"
+
+    surface.blit(
+        font.render(message, True, color),
+        (int(x), int(y))
+    )
+
+
+def add_event(message, color=WHITE):
+    events.append((str(message), color))
+    del events[:-8]
+
+
+def distance(x1, y1, x2, y2):
+    return abs(x1 - x2) + abs(y1 - y2)
+
+
+def inside(x, y):
+    return 0 <= x < MAP_W and 0 <= y < MAP_H
+
+
+def room_center(room):
+    x, y, w, h = room
+    return x + w // 2, y + h // 2
+
+
+def find_monster(x, y):
+    return next(
+        (m for m in monsters if m["x"] == x and m["y"] == y),
+        None
+    )
+
+
+def current_visibility(x, y):
+    return distance(
+        player["x"], player["y"], x, y
+    ) <= 5
+
+
+def occupied(x, y):
+    if (x, y) in (stairs_up, stairs_down):
+        return True
+
+    if (x, y) == (player["x"], player["y"]):
+        return True
+
+    if find_monster(x, y):
+        return True
+
+    if any(i["x"] == x and i["y"] == y for i in items):
+        return True
+
+    if shop and (x, y) == (shop["x"], shop["y"]):
+        return True
+
+    return False
+
+
+def random_position(room):
+    x, y, w, h = room
+    return (
+        random.randint(x + 1, x + w - 2),
+        random.randint(y + 1, y + h - 2)
+    )
+
+
+def free_position(room):
+    for _ in range(100):
+        x, y = random_position(room)
+        if not occupied(x, y):
+            return x, y
+    return None
+
+
+# ============================================================
+# PLAYER
+# ============================================================
+
+def setup_player():
+    player.clear()
+
+    player.update({
+        "x": 2,
+        "y": 2,
+        "hp": 40,
+        "max_hp": 40,
+        "attack": 3,
+        "base_defense": 0,
+        "level": 1,
+        "xp": 0,
+        "next_xp": 20,
+        "gold": 20,
+        "weapon": {
+            "name": "Rusty Sword",
+            "power": 2,
+            "durability": 60,
+            "max_durability": 60
+        },
+        "armor": {
+            "name": "Clothes",
+            "defense": 0
+        },
+        "trinket": None,
+        "inventory": [],
+        "turns": 0,
+        "kills": 0,
+        "potions_used": 0,
+        "floors_cleared": 0,
+    })
+
+
+def ensure_weapon_stats(weapon):
+    weapon.setdefault("power", 0)
+    weapon.setdefault("durability", 60)
+    weapon.setdefault("max_durability", weapon["durability"])
+    return weapon
+
+
+# ============================================================
+# FOG OF WAR
+# ============================================================
+
+def reveal_area():
+    px, py = player["x"], player["y"]
+
+    for y in range(MAP_H):
+        for x in range(MAP_W):
+            if distance(px, py, x, y) <= 5:
+                explored[y][x] = True
+
+    for room in rooms:
+        rx, ry, rw, rh = room
+
+        if rx < px < rx + rw - 1 and ry < py < ry + rh - 1:
+            for y in range(ry, ry + rh):
+                for x in range(rx, rx + rw):
+                    explored[y][x] = True
+
+
+# ============================================================
+# DUNGEON GENERATION
+# ============================================================
+
+def create_room(x, y, w, h):
+    for yy in range(y, y + h):
+        for xx in range(x, x + w):
+            dungeon[yy][xx] = 1
+
+
+def connect_rooms():
+    for i in range(1, len(rooms)):
+        x1, y1 = room_center(rooms[i - 1])
+        x2, y2 = room_center(rooms[i])
+
+        if random.choice([True, False]):
+            for x in range(min(x1, x2), max(x1, x2) + 1):
+                dungeon[y1][x] = 1
+
+            for y in range(min(y1, y2), max(y1, y2) + 1):
+                dungeon[y][x2] = 1
+        else:
+            for y in range(min(y1, y2), max(y1, y2) + 1):
+                dungeon[y][x1] = 1
+
+            for x in range(min(x1, x2), max(x1, x2) + 1):
+                dungeon[y2][x] = 1
+
+
+def create_random_item(x, y):
+    choice = random.randint(1, 5)
+
+    if choice == 1:
+        it = random.choice(WEAPONS)
+        durability = 60 + it["power"] * 3
+
+        return {
+            "x": x,
+            "y": y,
+            "name": it["name"],
+            "kind": "weapon",
+            "power": it["power"],
+            "durability": durability,
+            "max_durability": durability,
+            "symbol": "/"
+        }
+
+    if choice == 2:
+        it = random.choice(ARMOR)
+        return {
+            "x": x, "y": y,
+            "name": it["name"],
+            "kind": "armor",
+            "defense": it["defense"],
+            "symbol": "["
+        }
+
+    if choice == 3:
+        it = random.choice(POTIONS)
+        return {
+            "x": x, "y": y,
+            "name": it["name"],
+            "kind": "potion",
+            "heal": it["heal"],
+            "symbol": "!"
+        }
+
+    if choice == 4:
+        it = random.choice(SCROLLS)
+        result = {
+            "x": x, "y": y,
+            "name": it["name"],
+            "kind": "scroll",
+            "symbol": "?"
+        }
+
+        result.update({
+            k: it[k]
+            for k in ("heal", "power")
+            if k in it
+        })
+
+        return result
+
+    it = random.choice(TRINKETS)
+
+    return {
+        "x": x, "y": y,
+        "name": it["name"],
+        "kind": "trinket",
+        "bonus": it["bonus"],
+        "description": it["description"],
+        "symbol": "*"
+    }
+
+
+def create_shop_stock():
+    stock = []
+
+    for source, kind, key in (
+        (WEAPONS, "weapon", "power"),
+        (ARMOR, "armor", "defense"),
+        (POTIONS, "potion", "heal"),
+        (SCROLLS, "scroll", None),
+        (TRINKETS, "trinket", None)
+    ):
+        it = random.choice(source)
+
+        item = {
+            "name": it["name"],
+            "kind": kind,
+            "price": it["price"] + floor_number * 2
+        }
+
+        if key:
+            item[key] = it[key]
+
+        if kind == "weapon":
+            durability = 60 + it["power"] * 3
+            item["durability"] = durability
+            item["max_durability"] = durability
+
+        if kind == "trinket":
+            item.update({
+                "bonus": it["bonus"],
+                "description": it["description"],
+                "symbol": "*"
+            })
+
+        stock.append(item)
+
+    # Weapon enchantment: improves the equipped weapon.
+    stock.append({
+        "name": "Weapon Enchantment (+2)",
+        "kind": "enchantment",
+        "bonus": 2,
+        "durability_bonus": 15,
+        "price": 45 + floor_number * 5
+    })
+
+    return stock
+
+
+def generate_dungeon():
+    global dungeon, explored, rooms
+    global monsters, items, shop
+    global stairs_up, stairs_down
+
+    dungeon = [
+        [0 for _ in range(MAP_W)]
+        for _ in range(MAP_H)
+    ]
+
+    explored = [
+        [False for _ in range(MAP_W)]
+        for _ in range(MAP_H)
+    ]
+
+    rooms, monsters, items, shop = [], [], [], None
+
+    for _ in range(180):
+        w = random.randint(5, 10)
+        h = random.randint(4, 7)
+
+        x = random.randint(1, MAP_W - w - 2)
+        y = random.randint(1, MAP_H - h - 2)
+
+        if any(
+            x < ox + ow + 1
+            and x + w + 1 > ox
+            and y < oy + oh + 1
+            and y + h + 1 > oy
+            for ox, oy, ow, oh in rooms
+        ):
+            continue
+
+        rooms.append((x, y, w, h))
+        create_room(x, y, w, h)
+
+    if len(rooms) < 2:
+        rooms = [
+            (2, 2, 10, 8),
+            (25, 10, 12, 9)
+        ]
+
+        dungeon = [
+            [0 for _ in range(MAP_W)]
+            for _ in range(MAP_H)
+        ]
+
+        for room in rooms:
+            create_room(*room)
+
+    connect_rooms()
+
+    stairs_up = room_center(rooms[0])
+    stairs_down = room_center(rooms[-1])
+
+    player["x"], player["y"] = stairs_up
+
+    # MONSTERS
+
+    for room in rooms[1:]:
+        if floor_number <= 2:
+            monster_count = 1
+        elif floor_number <= 5:
+            monster_count = random.randint(1, 2)
+        else:
+            monster_count = random.randint(
+                1,
+                min(3, 1 + floor_number // 3)
+            )
+
+        for _ in range(monster_count):
+            pos = free_position(room)
+
+            if not pos:
+                continue
+
+            x, y = pos
+
+            max_type = min(
+                7,
+                1 + (floor_number - 1) // 2
+            )
+
+            template = random.choice(
+                MONSTER_TYPES[:max_type + 1]
+            )
+
+            hp = template["hp"] + (floor_number - 1) * 3
+            attack = template["attack"] + (floor_number - 1) // 3
+            xp = template["xp"] + floor_number * 2
+
+            monsters.append({
+                "name": template["name"],
+                "symbol": template["symbol"],
+                "x": x,
+                "y": y,
+                "hp": hp,
+                "max_hp": hp,
+                "attack": attack,
+                "xp": xp,
+                "boss": False,
+            })
+
+    # BOSSES
+
+    if floor_number % 5 == 0:
+        name = BOSS_NAMES[
+            (floor_number // 5 - 1) % len(BOSS_NAMES)
+        ]
+
+        pos = free_position(rooms[-1])
+
+        if pos:
+            x, y = pos
+            hp = 90 + floor_number * 10
+
+            monsters.append({
+                "name": name,
+                "symbol": "B",
+                "x": x,
+                "y": y,
+                "hp": hp,
+                "max_hp": hp,
+                "attack": 8 + floor_number,
+                "xp": 100 + floor_number * 10,
+                "boss": True
+            })
+
+    # ITEMS AND GOLD
+
+    for room in rooms[1:]:
+        if random.random() < 0.8:
+            pos = free_position(room)
+
+            if pos:
+                x, y = pos
+                amount = random.randint(5, 15) + floor_number * 2
+
+                items.append({
+                    "x": x,
+                    "y": y,
+                    "name": f"{amount} Gold",
+                    "kind": "gold",
+                    "amount": amount,
+                    "symbol": "$"
+                })
+
+        if random.random() < 0.7:
+            pos = free_position(room)
+
+            if pos:
+                items.append(create_random_item(*pos))
+
+    # SHOPS
+
+    if len(rooms) > 2 and random.random() < 0.5:
+        room = random.choice(rooms[1:-1])
+        pos = free_position(room)
+
+        if pos:
+            shop = {
+                "x": pos[0],
+                "y": pos[1],
+                "stock": create_shop_stock()
+            }
+
+    reveal_area()
+
+
+# ============================================================
+# PICKUPS AND LEVELING
+# ============================================================
+
+def pickup_item():
+    global score
+
+    for item in items[:]:
+        if (item["x"], item["y"]) != (
+            player["x"], player["y"]
+        ):
+            continue
+
+        if item["kind"] == "gold":
+            player["gold"] += item["amount"]
+            score += item["amount"]
+
+            add_event(
+                f"Picked up {item['amount']} gold.",
+                YELLOW
+            )
+        else:
+            new_item = {
+                k: v for k, v in item.items()
+                if k not in ("x", "y")
+            }
+
+            player["inventory"].append(new_item)
+            score += 5
+
+            add_event(
+                f"Picked up {item['name']} ({item['kind']}).",
+                GREEN
+            )
+
+        items.remove(item)
+
+
+def level_up():
+    while player["xp"] >= player["next_xp"]:
+        player["xp"] -= player["next_xp"]
+        player["level"] += 1
+
+        player["next_xp"] = int(
+            player["next_xp"] * 1.5
+        )
+
+        player["max_hp"] += 5
+        player["hp"] = player["max_hp"]
+        player["attack"] += 1
+        player["base_defense"] += 1
+
+        add_event(
+            f"LEVEL UP! Level {player['level']}! "
+            "+5 Max HP, +1 Attack, +1 Defense.",
+            GREEN
+        )
+
+
+# ============================================================
+# COMBAT
+# ============================================================
+
+def monster_attack(monster):
+    damage = max(
+        1,
+        monster["attack"]
+        - player["armor"]["defense"]
+        - player["base_defense"]
+        + random.randint(-1, 2)
+    )
+
+    player["hp"] -= damage
+
+    add_event(
+        f"{monster['name']} attacks for {damage} damage.",
+        RED
+    )
+
+
+def attack_monster(monster):
+    global score
+
+    weapon = ensure_weapon_stats(player["weapon"])
+
+    weapon_bonus = (
+        weapon["power"]
+        if weapon["durability"] > 0
+        else 0
+    )
+
+    damage = (
+        player["attack"]
+        + weapon_bonus
+        + random.randint(1, 4)
+    )
+
+    monster["hp"] -= damage
+
+    add_event(
+        f"You attack {monster['name']} for {damage} damage.",
+        GREEN
+    )
+
+    if weapon["durability"] > 0:
+        weapon["durability"] -= 1
+
+        if weapon["durability"] == 0:
+            add_event(
+                f"{weapon['name']} has broken! Bonus damage lost.",
+                RED
+            )
+
+    if monster["hp"] <= 0:
+        add_event(
+            f"{monster['name']} defeated. +{monster['xp']} XP.",
+            YELLOW
+        )
+
+        score += monster["xp"]
+        player["xp"] += monster["xp"]
+        player["kills"] += 1
+
+        if monster["boss"]:
+            score += 200
+            player["gold"] += 100 + floor_number * 5
+
+            add_event(
+                "Boss defeated! Bonus gold awarded.",
+                YELLOW
+            )
+
+            dropped_weapon = random.choice(WEAPONS)
+            durability = 60 + dropped_weapon["power"] * 3
+
+            player["inventory"].append({
+                "name": dropped_weapon["name"],
+                "kind": "weapon",
+                "power": dropped_weapon["power"],
+                "durability": durability,
+                "max_durability": durability,
+                "symbol": "/"
+            })
+
+            add_event(
+                f"Boss dropped {dropped_weapon['name']}.",
+                PURPLE
+            )
+        else:
+            player["gold"] += random.randint(1, 5)
+
+        monsters.remove(monster)
+        level_up()
+    else:
+        monster_attack(monster)
+
+
+def move_monsters():
+    for monster in monsters[:]:
+        dist = distance(
+            monster["x"],
+            monster["y"],
+            player["x"],
+            player["y"]
+        )
+
+        if dist <= 1:
+            monster_attack(monster)
+            continue
+
+        if dist > 8 or random.random() > 0.72:
+            continue
+
+        options = [
+            (monster["x"] + 1, monster["y"]),
+            (monster["x"] - 1, monster["y"]),
+            (monster["x"], monster["y"] + 1),
+            (monster["x"], monster["y"] - 1)
+        ]
+
+        random.shuffle(options)
+
+        options.sort(
+            key=lambda p: distance(
+                p[0], p[1],
+                player["x"], player["y"]
+            )
+        )
+
+        for nx, ny in options:
+            if not inside(nx, ny):
+                continue
+
+            if dungeon[ny][nx] == 0:
+                continue
+
+            if (nx, ny) == (player["x"], player["y"]):
+                continue
+
+            if find_monster(nx, ny):
+                continue
+
+            monster["x"], monster["y"] = nx, ny
+            break
+
+
+def move_player(dx, dy):
+    nx = player["x"] + dx
+    ny = player["y"] + dy
+
+    if not inside(nx, ny):
+        return
+
+    if dungeon[ny][nx] == 0:
+        add_event("You bump into a wall.", GRAY)
+        return
+
+    monster = find_monster(nx, ny)
+
+    if monster:
+        attack_monster(monster)
+        move_monsters()
+        player["turns"] += 1
+        return
+
+    player["x"], player["y"] = nx, ny
+    player["turns"] += 1
+
+    reveal_area()
+    pickup_item()
+
+    if shop and (nx, ny) == (shop["x"], shop["y"]):
+        add_event("Shop found. Press T to browse.", YELLOW)
+
+    if (nx, ny) == stairs_down:
+        add_event("Down stairs: press . to descend.", CYAN)
+
+    if (nx, ny) == stairs_up:
+        add_event("Up stairs: press , to ascend.", CYAN)
+
+    move_monsters()
+
+
+# ============================================================
+# INVENTORY
+# ============================================================
+
+def use_inventory_item(index):
+    inv = player["inventory"]
+
+    if not 0 <= index < len(inv):
+        return
+
+    item = inv[index]
+    kind = item["kind"]
+
+    if kind == "weapon":
+        old = dict(ensure_weapon_stats(player["weapon"]))
+        old["kind"] = "weapon"
+        old["symbol"] = "/"
+
+        player["weapon"] = {
+            "name": item["name"],
+            "power": item["power"],
+            "durability": item.get("durability", 60),
+            "max_durability": item.get("max_durability", 60)
+        }
+
+        inv.pop(index)
+        inv.append(old)
+
+        add_event(f"Equipped {item['name']}.", GREEN)
+
+    elif kind == "armor":
+        old = {
+            "name": player["armor"]["name"],
+            "kind": "armor",
+            "defense": player["armor"]["defense"],
+            "symbol": "["
+        }
+
+        player["armor"] = {
+            "name": item["name"],
+            "defense": item["defense"]
+        }
+
+        inv.pop(index)
+        inv.append(old)
+
+        add_event(f"Equipped {item['name']}.", GREEN)
+
+    elif kind == "trinket":
+        old = player["trinket"]
+
+        if old:
+            inv.append(old)
+
+        player["trinket"] = item
+
+        if item["bonus"] == "health":
+            player["max_hp"] += 5
+            player["hp"] += 5
+        elif item["bonus"] == "attack":
+            player["attack"] += 1
+
+        add_event(
+            f"Equipped trinket: {item['name']}.",
+            PURPLE
+        )
+
+        inv.pop(index)
+
+    elif kind == "enchantment":
+        weapon = ensure_weapon_stats(player["weapon"])
+
+        weapon["power"] += item.get("bonus", 2)
+
+        durability_bonus = item.get("durability_bonus", 15)
+
+        weapon["max_durability"] += durability_bonus
+        weapon["durability"] = min(
+            weapon["max_durability"],
+            weapon["durability"] + durability_bonus
+        )
+
+        add_event(
+            f"Enchanted {weapon['name']}! "
+            f"+{item.get('bonus', 2)} power and "
+            f"+{durability_bonus} max durability.",
+            PURPLE
+        )
+
+        inv.pop(index)
+
+    elif kind in ("potion", "scroll"):
+        if "heal" in item:
+            healed = min(
+                item["heal"],
+                player["max_hp"] - player["hp"]
+            )
+
+            player["hp"] += healed
+
+            add_event(
+                f"{item['name']}: recovered {healed} HP.",
+                GREEN
+            )
+
+        if "power" in item:
+            player["attack"] += item["power"]
+
+            add_event(
+                f"{item['name']}: attack increased by {item['power']}.",
+                PURPLE
+            )
+
+        player["potions_used"] += 1
+        inv.pop(index)
+
+
+def drop_inventory_item(index):
+    inv = player["inventory"]
+
+    if not 0 <= index < len(inv):
+        return
+
+    item = inv.pop(index)
+    dropped = dict(item)
+
+    dropped.update({
+        "x": player["x"],
+        "y": player["y"]
+    })
+
+    dropped.setdefault("symbol", "?")
+    items.append(dropped)
+
+    add_event(f"Dropped {item['name']}.", YELLOW)
+
+
+# ============================================================
+# STAIRS
+# ============================================================
+
+def descend():
+    global floor_number, deepest_floor, score
+
+    if (player["x"], player["y"]) != stairs_down:
+        add_event("Stand on the > stairs first.", GRAY)
+        return
+
+    if any(m["boss"] for m in monsters):
+        add_event("The boss still guards the stairs.", RED)
+        return
+
+    floor_number += 1
+    deepest_floor = max(deepest_floor, floor_number)
+    player["floors_cleared"] += 1
+    score += 20
+
+    add_event(
+        f"You descend to floor {floor_number}.",
+        CYAN
+    )
+
+    generate_dungeon()
+
+
+def ascend():
+    global floor_number
+
+    if (player["x"], player["y"]) != stairs_up:
+        add_event("Stand on the < stairs first.", GRAY)
+        return
+
+    if floor_number == 1:
+        add_event("You are already on floor 1.", GRAY)
+        return
+
+    floor_number -= 1
+
+    add_event(
+        f"You ascend to floor {floor_number}.",
+        CYAN
+    )
+
+    generate_dungeon()
+
+
+# ============================================================
+# SHOP
+# ============================================================
+
+def buy_item(index):
+    if not shop or not 0 <= index < len(shop["stock"]):
+        return
+
+    item = shop["stock"][index]
+
+    if player["gold"] < item["price"]:
+        add_event("Not enough gold.", RED)
+        return
+
+    player["gold"] -= item["price"]
+
+    purchased = {
+        k: v for k, v in item.items()
+        if k != "price"
+    }
+
+    player["inventory"].append(purchased)
+
+    add_event(f"Bought {item['name']}.", GREEN)
+    shop["stock"].pop(index)
+
+
+# ============================================================
+# INSPECTION
+# ============================================================
+
+def inspect_area():
+    found = False
+
+    for monster in monsters:
+        if distance(
+            player["x"], player["y"],
+            monster["x"], monster["y"]
+        ) <= 5:
+            add_event(
+                f"{monster['name']}: {monster['hp']}/{monster['max_hp']} HP.",
+                RED
+            )
+            found = True
+
+    for item in items:
+        if distance(
+            player["x"], player["y"],
+            item["x"], item["y"]
+        ) <= 3:
+            add_event(
+                f"Nearby item: {item['name']}.",
+                YELLOW
+            )
+            found = True
+
+    if shop and distance(
+        player["x"], player["y"],
+        shop["x"], shop["y"]
+    ) <= 3:
+        add_event("A shop is nearby.", YELLOW)
+        found = True
+
+    if not found:
+        add_event("Nothing interesting nearby.", GRAY)
+
+
+def item_description(item):
+    kind = item.get("kind", "item")
+
+    if kind == "weapon":
+        return (
+            f"Weapon | +{item.get('power', 0)} power | "
+            f"Durability {item.get('durability', 60)}/"
+            f"{item.get('max_durability', 60)}"
+        )
+
+    if kind == "armor":
+        return f"Armor | {item.get('defense', 0)} defense"
+
+    if kind == "potion":
+        return f"Potion | Restores up to {item.get('heal', 0)} HP"
+
+    if kind == "scroll":
+        return (
+            "Scroll | Restores HP"
+            if "heal" in item
+            else "Scroll | Raises attack"
+        )
+
+    if kind == "trinket":
+        return item.get("description", "A mysterious trinket.")
+
+    if kind == "enchantment":
+        return (
+            f"Enchantment | +{item.get('bonus', 2)} weapon power | "
+            f"+{item.get('durability_bonus', 15)} max durability"
+        )
+
+    return "An item."
+
+
+# ============================================================
+# DRAWING
+# ============================================================
+
+def draw_map(L):
+    t = L["tile"]
+    ox = L["map_x"]
+    oy = L["map_y"]
+
+    map_rect = pygame.Rect(
+        ox, oy,
+        L["map_w"], L["map_h"]
+    )
+
+    pygame.draw.rect(screen, BLACK, map_rect)
+
+    for y in range(MAP_H):
+        for x in range(MAP_W):
+            rect = pygame.Rect(
+                ox + x * t,
+                oy + y * t,
+                t, t
+            )
+
+            if not explored[y][x]:
+                color = BLACK
+            else:
+                color = FLOOR if dungeon[y][x] else WALL
+
+            pygame.draw.rect(screen, color, rect)
+
+            if explored[y][x] and t >= 5:
+                pygame.draw.rect(
+                    screen,
+                    (
+                        min(255, color[0] + 8),
+                        min(255, color[1] + 8),
+                        min(255, color[2] + 8)
+                    ),
+                    rect,
+                    1
+                )
+
+    def symbol(ch, x, y, color):
+        if t < 7:
+            return
+
+        font = pygame.font.SysFont(
+            "consolas",
+            max(8, int(t * 0.85)),
+            bold=True
+        )
+
+        img = font.render(ch, True, color)
+
+        screen.blit(
+            img,
+            img.get_rect(
+                center=(
+                    ox + x * t + t // 2,
+                    oy + y * t + t // 2
+                )
+            )
+        )
+
+    if explored[stairs_up[1]][stairs_up[0]]:
+        symbol("<", *stairs_up, CYAN)
+
+    if explored[stairs_down[1]][stairs_down[0]]:
+        symbol(">", *stairs_down, CYAN)
+
+    item_colors = {
+        "gold": YELLOW,
+        "weapon": PURPLE,
+        "armor": BLUE,
+        "potion": GREEN,
+        "scroll": CYAN,
+        "trinket": ORANGE,
+        "enchantment": PURPLE
+    }
+
+    for item in items:
+        x, y = item["x"], item["y"]
+
+        if explored[y][x] and current_visibility(x, y):
+            symbol(
+                item.get("symbol", "?"),
+                x, y,
+                item_colors.get(item["kind"], WHITE)
+            )
+
+    if shop and current_visibility(shop["x"], shop["y"]):
+        symbol("S", shop["x"], shop["y"], YELLOW)
+
+    for m in monsters:
+        if current_visibility(m["x"], m["y"]):
+            symbol(
+                m["symbol"],
+                m["x"],
+                m["y"],
+                ORANGE if m["boss"] else PURPLE
+            )
+
+    symbol("@", player["x"], player["y"], GREEN)
+
+    pygame.draw.rect(screen, GRAY, map_rect, 2)
+
+
+def draw_health_bar(x, y, width, height, value, maximum):
+    pygame.draw.rect(
+        screen,
+        (65, 35, 35),
+        (x, y, width, height)
+    )
+
+    ratio = max(
+        0,
+        min(1, value / max(1, maximum))
+    )
+
+    pygame.draw.rect(
+        screen,
+        RED,
+        (x, y, int(width * ratio), height)
+    )
+
+    pygame.draw.rect(
+        screen,
+        WHITE,
+        (x, y, width, height),
+        1
+    )
+
+
+# ============================================================
+# MAIN INTERFACE
+# ============================================================
+
+def draw_interface():
+    L = layout()
+
+    screen.fill(BLACK)
+
+    pygame.draw.rect(
+        screen,
+        DARK,
+        (0, 0, L["w"], L["top"])
+    )
+
+    f = L["font"]
+    sm = L["small"]
+    big = L["big"]
+
+    draw_text(
+        screen,
+        "ROGUE",
+        12, 8,
+        YELLOW,
+        big
+    )
+
+    header_y = 14
+    header_x = min(150, L["w"] // 5)
+
+    stats = [
+        (f"Floor {floor_number}", CYAN),
+        (f"Score {score}", YELLOW),
+        (f"Gold {player['gold']}", YELLOW),
+        (f"Level {player['level']}", GREEN),
+        (f"HP {player['hp']}/{player['max_hp']}", RED),
+    ]
+
+    for label, color in stats:
+        draw_text(
+            screen,
+            label,
+            header_x,
+            header_y,
+            color,
+            f
+        )
+
+        header_x += f.size(label)[0] + 18
+
+    draw_health_bar(
+        12,
+        L["top"] - 13,
+        max(80, L["panel_x"] - 24),
+        7,
+        player["hp"],
+        player["max_hp"]
+    )
+
+    draw_map(L)
+
+    px = L["panel_x"]
+
+    pygame.draw.rect(
+        screen,
+        PANEL,
+        (
+            px,
+            L["top"],
+            L["w"] - px,
+            L["h"] - L["top"]
+        )
+    )
+
+    pygame.draw.line(
+        screen,
+        GRAY,
+        (px, L["top"]),
+        (px, L["h"]),
+        2
+    )
+
+    left = px + 12
+    maxw = L["w"] - left - 10
+    y = L["top"] + 12
+
+    draw_text(
+        screen,
+        "CHARACTER",
+        left, y,
+        CYAN, f
+    )
+
+    y += 27
+
+    # SCORE AND LEVEL AT TOP OF SIDEBAR
+    draw_text(
+        screen,
+        f"Score: {score}    Level: {player['level']}",
+        left, y,
+        YELLOW, sm, maxw
+    )
+
+    y += 21
+
+    draw_text(
+        screen,
+        f"Attack: {player['attack'] + player['weapon']['power']}",
+        left, y
+    )
+
+    y += 21
+
+    # WEAPON NAME AND DURABILITY ON THE SAME LINE
+    weapon = ensure_weapon_stats(player["weapon"])
+
+    weapon_name = f"Weapon: {weapon['name']}"
+    durability_text = (
+        f"dp:{weapon['durability']}/{weapon['max_durability']}"
+    )
+
+    durability_width = sm.size(durability_text)[0]
+    name_width = max(10, maxw - durability_width - 8)
+
+    name_display = weapon_name
+
+    while name_display and sm.size(name_display)[0] > name_width:
+        name_display = name_display[:-1]
+
+    if name_display != weapon_name:
+        name_display = name_display.rstrip() + "…"
+
+    draw_text(
+        screen,
+        name_display,
+        left, y,
+        PURPLE, sm
+    )
+
+    durability_x = left + sm.size(name_display)[0] + 8
+
+    draw_text(
+        screen,
+        durability_text,
+        durability_x, y,
+        PURPLE, sm
+    )
+
+    y += 19
+
+    draw_text(
+        screen,
+        f"Armor: {player['armor']['name']}",
+        left, y,
+        BLUE, sm, maxw
+    )
+
+    y += 19
+
+    trinket = (
+        player["trinket"]["name"]
+        if player["trinket"]
+        else "None"
+    )
+
+    draw_text(
+        screen,
+        f"Trinket: {trinket}",
+        left, y,
+        ORANGE, sm, maxw
+    )
+
+    y += 19
+
+    draw_text(
+        screen,
+        f"Defense: {player['armor']['defense'] + player['base_defense']}",
+        left, y
+    )
+
+    y += 20
+
+    draw_text(
+        screen,
+        f"XP: {player['xp']}/{player['next_xp']}",
+        left, y,
+        GREEN
+    )
+
+    y += 25
+
+    pygame.draw.line(
+        screen,
+        GRAY,
+        (left, y),
+        (L["w"] - 10, y)
+    )
+
+    y += 8
+
+    draw_text(
+        screen,
+        "EVENT LOG",
+        left, y,
+        YELLOW, f
+    )
+
+    y += 25
+
+    for message, color in events[-5:]:
+        draw_text(
+            screen,
+            message,
+            left, y,
+            color, sm, maxw
+        )
+        y += 19
+
+    y += 5
+
+    pygame.draw.line(
+        screen,
+        GRAY,
+        (left, y),
+        (L["w"] - 10, y)
+    )
+
+    y += 8
+
+    draw_text(
+        screen,
+        "QUICK CONTROLS",
+        left, y,
+        CYAN, f
+    )
+
+    y += 23
+
+    controls = [
+        "WASD / Arrows: Move",
+        "I: Inventory",
+        "C: Character stats",
+        "H: Help / control guide",
+        "X: Inspect nearby",
+        "T: Shop (on S)",
+        ". : Descend   ,: Ascend",
+        "Space: Wait   R: Drop last item"
+    ]
+
+    for line in controls:
+        draw_text(
+            screen,
+            line,
+            left, y,
+            WHITE, sm, maxw
+        )
+        y += 18
+
+    draw_text(
+        screen,
+        "More: press H for full guide",
+        left,
+        min(L["h"] - 20, y + 3),
+        GRAY,
+        sm
+    )
+
+
+# ============================================================
+# OVERLAYS
+# ============================================================
+
+def draw_overlay(
+    title,
+    lines,
+    accent=CYAN,
+    footer="UP/DOWN: Select   ENTER: Confirm   ESC: Close"
+):
+    L = layout()
+
+    overlay = pygame.Surface(
+        (L["w"], L["h"]),
+        pygame.SRCALPHA
+    )
+
+    overlay.fill((0, 0, 0, 205))
+    screen.blit(overlay, (0, 0))
+
+    width = min(680, L["w"] - 28)
+
+    height = min(
+        L["h"] - 28,
+        max(250, 115 + len(lines) * 27)
+    )
+
+    x = (L["w"] - width) // 2
+    y = (L["h"] - height) // 2
+
+    pygame.draw.rect(
+        screen,
+        DARK,
+        (x, y, width, height)
+    )
+
+    pygame.draw.rect(
+        screen,
+        accent,
+        (x, y, width, height),
+        2
+    )
+
+    draw_text(
+        screen,
+        title,
+        x + 20,
+        y + 14,
+        accent,
+        L["big"]
+    )
+
+    content_top = y + 60
+
+    line_h = min(
+        27,
+        max(
+            19,
+            (height - 105) // max(1, len(lines))
+        )
+    )
+
+    for i, entry in enumerate(lines):
+        if len(entry) == 3:
+            label, color, selected = entry
+        else:
+            label, color = entry
+            selected = False
+
+        yy = content_top + i * line_h
+
+        if selected:
+            pygame.draw.rect(
+                screen,
+                (65, 65, 85),
+                (x + 10, yy - 2, width - 20, line_h)
+            )
+
+        draw_text(
+            screen,
+            label,
+            x + 22,
+            yy,
+            color,
+            L["small"],
+            width - 44
+        )
+
+    draw_text(
+        screen,
+        footer,
+        x + 20,
+        y + height - 31,
+        WHITE,
+        L["small"],
+        width - 40
+    )
+
+
+# ============================================================
+# INVENTORY SCREEN
+# ============================================================
+
+def draw_inventory():
+    inv = player["inventory"]
+    lines = []
+
+    if not inv:
+        lines = [
+            ("Your inventory is empty.", GRAY)
+        ]
+    else:
+        for i, item in enumerate(inv[:18]):
+            color = {
+                "weapon": PURPLE,
+                "armor": BLUE,
+                "potion": GREEN,
+                "scroll": CYAN,
+                "trinket": ORANGE,
+                "enchantment": PURPLE
+            }.get(item["kind"], WHITE)
+
+            lines.append((
+                f"{i+1}. {item['name']}  [{item['kind']}]",
+                color,
+                i == menu_selection
+            ))
+
+        if 0 <= menu_selection < len(inv):
+            lines.append((
+                item_description(inv[menu_selection]),
+                YELLOW
+            ))
+
+    draw_overlay(
+        "INVENTORY",
+        lines,
+        YELLOW,
+        "UP/DOWN Select | ENTER Equip/Use | R Drop | I/ESC Close"
+    )
+
+
+# ============================================================
+# SHOP SCREEN
+# ============================================================
+
+def draw_shop():
+    stock = shop["stock"] if shop else []
+    lines = []
+
+    if not stock:
+        lines = [
+            ("The shop is sold out.", GRAY)
+        ]
+    else:
+        for i, item in enumerate(stock):
+            color = (
+                GREEN
+                if player["gold"] >= item["price"]
+                else RED
+            )
+
+            label = f"{i+1}. {item['name']}  -  {item['price']} gold"
+
+            if item["kind"] == "enchantment":
+                label += f" (+{item['bonus']} power)"
+
+            lines.append((
+                label,
+                color,
+                i == menu_selection
+            ))
+
+    lines.append((
+        f"Your gold: {player['gold']}",
+        YELLOW
+    ))
+
+    draw_overlay(
+        "DUNGEON SHOP",
+        lines,
+        YELLOW,
+        "UP/DOWN Select | ENTER Buy | T/ESC Leave"
+    )
+
+
+# ============================================================
+# CONTROL GUIDE
+# ============================================================
+
+def draw_guide():
+    pages = [
+        [
+            ("MOVEMENT", CYAN),
+            ("WASD or Arrow Keys: move one tile.", WHITE),
+            ("Walking into a monster attacks it.", WHITE),
+            ("SPACE: wait one turn.", WHITE),
+            ("Walls block movement. Explored areas stay revealed.", WHITE),
+            ("", WHITE),
+            ("ITEMS AND INVENTORY", CYAN),
+            ("Items are picked up automatically when you walk over them.", WHITE),
+            ("I: open inventory. ENTER equips gear or uses a consumable.", WHITE),
+            ("R: drop the selected item while inventory is open.", WHITE),
+            ("X: inspect nearby monsters, items and shops.", WHITE),
+        ],
+        [
+            ("DUNGEON", CYAN),
+            ("Each floor is randomly generated.", WHITE),
+            ("< is the up staircase. > is the down staircase.", WHITE),
+            ("Stand on > and press . to descend.", WHITE),
+            ("Stand on < and press , to ascend.", WHITE),
+            ("A boss appears every fifth floor and guards the stairs.", WHITE),
+            ("", WHITE),
+            ("SHOPS AND CHARACTER", CYAN),
+            ("S marks a shop. Stand on S and press T to enter.", WHITE),
+            ("C: view character stats and run statistics.", WHITE),
+            ("Trinkets provide a special bonus while equipped.", WHITE),
+            ("Weapon enchantments improve your equipped weapon.", WHITE),
+            ("H: switch guide page. ESC: close this guide.", WHITE),
+        ],
+    ]
+
+    draw_overlay(
+        "CONTROL GUIDE  -  PAGE " + str(guide_page + 1),
+        pages[guide_page],
+        CYAN,
+        "H / LEFT / RIGHT: Change page | ESC: Close"
+    )
+
+
+# ============================================================
+# CHARACTER STATS
+# ============================================================
+
+def draw_stats():
+    p = player
+
+    weapon = ensure_weapon_stats(p["weapon"])
+
+    lines = [
+        (
+            f"Level: {p['level']}    XP: {p['xp']} / {p['next_xp']}",
+            GREEN
+        ),
+        (
+            f"Health: {p['hp']} / {p['max_hp']}",
+            RED
+        ),
+        (
+            f"Base attack: {p['attack']}",
+            WHITE
+        ),
+        (
+            f"Base defense: {p['base_defense']}",
+            WHITE
+        ),
+        (
+            f"Weapon: {weapon['name']} (+{weapon['power']})",
+            PURPLE
+        ),
+        (
+            f"Weapon durability: {weapon['durability']}/{weapon['max_durability']}",
+            PURPLE
+        ),
+        (
+            f"Total attack: {p['attack'] + (weapon['power'] if weapon['durability'] > 0 else 0)}",
+            YELLOW
+        ),
+        (
+            f"Armor: {p['armor']['name']} (defense {p['armor']['defense']})",
+            BLUE
+        ),
+        (
+            f"Trinket: {p['trinket']['name'] if p['trinket'] else 'None'}",
+            ORANGE
+        ),
+        (
+            f"Gold: {p['gold']}    Score: {score}",
+            YELLOW
+        ),
+        (
+            f"Monsters defeated: {p['kills']}",
+            WHITE
+        ),
+        (
+            f"Turns taken: {p['turns']}",
+            WHITE
+        ),
+        (
+            f"Consumables used: {p['potions_used']}",
+            WHITE
+        ),
+        (
+            f"Floors descended: {p['floors_cleared']}    Deepest floor: {deepest_floor}",
+            CYAN
+        ),
+    ]
+
+    draw_overlay(
+        "CHARACTER STATS",
+        lines,
+        GREEN,
+        "C / ESC: Close"
+    )
+
+
+# ============================================================
+# GAME OVER
+# ============================================================
+
+def draw_game_over():
+    L = layout()
+
+    screen.fill(BLACK)
+
+    draw_text(
+        screen,
+        "GAME OVER",
+        L["w"] // 2 - 100,
+        L["h"] // 2 - 110,
+        RED,
+        L["big"]
+    )
+
+    draw_text(
+        screen,
+        f"Final score: {score}",
+        L["w"] // 2 - 100,
+        L["h"] // 2 - 50,
+        YELLOW,
+        L["font"]
+    )
+
+    draw_text(
+        screen,
+        f"Deepest floor: {deepest_floor}",
+        L["w"] // 2 - 100,
+        L["h"] // 2 - 20,
+        CYAN,
+        L["font"]
+    )
+
+    draw_text(
+        screen,
+        f"Player level: {player['level']}",
+        L["w"] // 2 - 100,
+        L["h"] // 2 + 10,
+        GREEN,
+        L["font"]
+    )
+
+    draw_text(
+        screen,
+        "R: Restart     ESC: Quit",
+        L["w"] // 2 - 100,
+        L["h"] // 2 + 65,
+        WHITE,
+        L["font"]
+    )
+
+
+# ============================================================
+# NEW GAME
+# ============================================================
+
+def new_game():
+    global floor_number, deepest_floor
+    global score, game_state
+    global menu_selection, events, guide_page
+
+    setup_player()
+
+    floor_number = 1
+    deepest_floor = 1
+    score = 0
+    events = []
+
+    menu_selection = 0
+    guide_page = 0
+
+    game_state = "playing"
+
+    generate_dungeon()
+
+    add_event(
+        "Welcome to the dungeon. Press H for controls.",
+        CYAN
+    )
+
+    add_event(
+        "Explore, collect equipment and find the stairs.",
+        WHITE
+    )
+
+
+# ============================================================
+# INPUT AND MAIN LOOP
+# ============================================================
+
+new_game()
+
+running = True
+
+while running:
+    clock.tick(FPS)
+
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+            continue
+
+        if event.type == pygame.VIDEORESIZE:
+            screen = pygame.display.set_mode(
+                (
+                    max(800, event.w),
+                    max(500, event.h)
+                ),
+                pygame.RESIZABLE
+            )
+            continue
+
+        if event.type != pygame.KEYDOWN:
+            continue
+
+        key = event.key
+
+        # ESCAPE
+        if key == pygame.K_ESCAPE:
+            if game_state == "playing":
+                running = False
+            else:
+                game_state = "playing"
+            continue
+
+        # GAME OVER
+        if game_state == "gameover":
+            if key == pygame.K_r:
+                new_game()
+            continue
+
+        # GUIDE
+        if game_state == "guide":
+            if key in (
+                pygame.K_h,
+                pygame.K_RIGHT,
+                pygame.K_PAGEDOWN
+            ):
+                guide_page = (guide_page + 1) % 2
+
+            elif key in (
+                pygame.K_LEFT,
+                pygame.K_PAGEUP
+            ):
+                guide_page = (guide_page - 1) % 2
+
+            continue
+
+        # STATS
+        if game_state == "stats":
+            if key == pygame.K_c:
+                game_state = "playing"
+            continue
+
+        # INVENTORY
+        if game_state == "inventory":
+            max_index = len(player["inventory"]) - 1
+
+            if key in (pygame.K_i, pygame.K_ESCAPE):
+                game_state = "playing"
+
+            elif key == pygame.K_UP:
+                menu_selection = max(0, menu_selection - 1)
+
+            elif key == pygame.K_DOWN:
+                menu_selection = min(
+                    max(0, max_index),
+                    menu_selection + 1
+                )
+
+            elif key == pygame.K_RETURN:
+                use_inventory_item(menu_selection)
+
+                menu_selection = min(
+                    menu_selection,
+                    max(0, len(player["inventory"]) - 1)
+                )
+
+            elif key == pygame.K_r:
+                drop_inventory_item(menu_selection)
+
+                menu_selection = min(
+                    menu_selection,
+                    max(0, len(player["inventory"]) - 1)
+                )
+
+            continue
+
+        # SHOP
+        if game_state == "shop":
+            stock_len = (
+                len(shop["stock"])
+                if shop else 0
+            )
+
+            if key in (pygame.K_t, pygame.K_ESCAPE):
+                game_state = "playing"
+
+            elif key == pygame.K_UP:
+                menu_selection = max(0, menu_selection - 1)
+
+            elif key == pygame.K_DOWN:
+                menu_selection = min(
+                    max(0, stock_len - 1),
+                    menu_selection + 1
+                )
+
+            elif key == pygame.K_RETURN:
+                buy_item(menu_selection)
+
+                menu_selection = min(
+                    menu_selection,
+                    max(0, len(shop["stock"]) - 1)
+                )
+
+            continue
+
+        # PLAYING
+        if game_state == "playing":
+            if key in (pygame.K_w, pygame.K_UP):
+                move_player(0, -1)
+
+            elif key in (pygame.K_s, pygame.K_DOWN):
+                move_player(0, 1)
+
+            elif key in (pygame.K_a, pygame.K_LEFT):
+                move_player(-1, 0)
+
+            elif key in (pygame.K_d, pygame.K_RIGHT):
+                move_player(1, 0)
+
+            elif key == pygame.K_i:
+                game_state = "inventory"
+                menu_selection = 0
+
+            elif key == pygame.K_c:
+                game_state = "stats"
+
+            elif key == pygame.K_h:
+                game_state = "guide"
+                guide_page = 0
+
+            elif key == pygame.K_t:
+                if shop and (
+                    player["x"], player["y"]
+                ) == (
+                    shop["x"], shop["y"]
+                ):
+                    game_state = "shop"
+                    menu_selection = 0
+                else:
+                    add_event(
+                        "Stand on S to enter a shop.",
+                        GRAY
+                    )
+
+            elif key == pygame.K_x:
+                inspect_area()
+
+            elif key == pygame.K_r:
+                if player["inventory"]:
+                    drop_inventory_item(
+                        len(player["inventory"]) - 1
+                    )
+                else:
+                    add_event(
+                        "Your inventory is empty.",
+                        GRAY
+                    )
+
+            elif key == pygame.K_PERIOD:
+                descend()
+
+            elif key == pygame.K_COMMA:
+                ascend()
+
+            elif key == pygame.K_SPACE:
+                player["turns"] += 1
+
+                add_event(
+                    "You wait for a turn.",
+                    WHITE
+                )
+
+                move_monsters()
+
+    if player["hp"] <= 0:
+        game_state = "gameover"
+
+    if game_state == "gameover":
+        draw_game_over()
+
+    else:
+        draw_interface()
+
+        if game_state == "inventory":
+            draw_inventory()
+
+        elif game_state == "shop":
+            draw_shop()
+
+        elif game_state == "guide":
+            draw_guide()
+
+        elif game_state == "stats":
+            draw_stats()
+
+    pygame.display.flip()
+
+
+pygame.quit()
+sys.exit()
